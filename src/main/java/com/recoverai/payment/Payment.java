@@ -37,7 +37,8 @@ public class Payment {
     @Column(nullable = false)
     private PaymentStatus status;
 
-    private String failureReason;
+    @Enumerated(EnumType.STRING)
+    private FailureReason failureReason;
 
     @Column(nullable = false)
     private int retryCount = 0;
