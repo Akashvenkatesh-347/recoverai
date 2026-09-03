@@ -5,6 +5,8 @@ import com.recoverai.payment.repository.PaymentRepository;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/recovery")
 public class RecoveryDecisionController {
@@ -12,15 +14,18 @@ public class RecoveryDecisionController {
     private final PaymentRepository paymentRepository;
     private final RecoveryPolicyService recoveryPolicyService;
     private final RecoveryExecutionService recoveryExecutionService;
+    private final RecoveryAttemptRepository recoveryAttemptRepository;
 
     public RecoveryDecisionController(
             PaymentRepository paymentRepository,
             RecoveryPolicyService recoveryPolicyService,
-            RecoveryExecutionService recoveryExecutionService) {
+            RecoveryExecutionService recoveryExecutionService,
+            RecoveryAttemptRepository recoveryAttemptRepository) {
 
         this.paymentRepository = paymentRepository;
         this.recoveryPolicyService = recoveryPolicyService;
         this.recoveryExecutionService = recoveryExecutionService;
+        this.recoveryAttemptRepository = recoveryAttemptRepository;
     }
 
     @PostMapping("/payments/{paymentId}/decision")
@@ -76,6 +81,31 @@ public class RecoveryDecisionController {
                 recoveryExecutionService.execute(payment, action);
 
         return ResponseEntity.ok(result);
+    }
+
+    @GetMapping("/payments/{paymentId}/history")
+    public ResponseEntity<List<RecoveryHistoryResponse>> getRecoveryHistory(
+            @PathVariable Long paymentId) {
+
+        if (!paymentRepository.existsById(paymentId)) {
+            throw new IllegalArgumentException(
+                    "Payment not found: " + paymentId
+            );
+        }
+
+        List<RecoveryHistoryResponse> history =
+                recoveryAttemptRepository
+                        .findByPaymentIdOrderByAttemptedAtDesc(paymentId)
+                        .stream()
+                        .map(attempt -> new RecoveryHistoryResponse(
+                                attempt.getAction(),
+                                attempt.getRetryCountBefore(),
+                                attempt.getAttemptedAt(),
+                                attempt.getResult()
+                        ))
+                        .toList();
+
+        return ResponseEntity.ok(history);
     }
 
     private RiskLevel determineRiskLevel(

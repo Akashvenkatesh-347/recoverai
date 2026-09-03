@@ -12,9 +12,14 @@ import java.time.LocalDateTime;
 public class RecoveryExecutionService {
 
     private final PaymentRepository paymentRepository;
+    private final RecoveryAttemptRepository recoveryAttemptRepository;
 
-    public RecoveryExecutionService(PaymentRepository paymentRepository) {
+    public RecoveryExecutionService(
+            PaymentRepository paymentRepository,
+            RecoveryAttemptRepository recoveryAttemptRepository) {
+
         this.paymentRepository = paymentRepository;
+        this.recoveryAttemptRepository = recoveryAttemptRepository;
     }
 
     @Transactional
@@ -33,33 +38,99 @@ public class RecoveryExecutionService {
             case RETRY_PAYMENT -> executeRetry(payment);
 
             case USER_NOTIFICATION ->
-                    "User notification required for payment " + payment.getId();
+                    recordNonRetryAction(
+                            payment,
+                            action,
+                            "User notification required for payment "
+                                    + payment.getId()
+                    );
 
             case ESCALATE ->
-                    "Payment " + payment.getId()
-                            + " has been escalated for manual review.";
+                    recordNonRetryAction(
+                            payment,
+                            action,
+                            "Payment " + payment.getId()
+                                    + " has been escalated for manual review."
+                    );
 
             case NO_ACTION ->
-                    "No recovery action required for payment "
-                            + payment.getId();
+                    recordNonRetryAction(
+                            payment,
+                            action,
+                            "No recovery action required for payment "
+                                    + payment.getId()
+                    );
         };
     }
 
     private String executeRetry(Payment payment) {
 
         if (payment.getStatus() != PaymentStatus.FAILED) {
-            return "Payment " + payment.getId()
+
+            String result = "Payment " + payment.getId()
                     + " is not in FAILED state. Retry skipped.";
+
+            saveAttempt(
+                    payment,
+                    RecommendedAction.RETRY_PAYMENT,
+                    payment.getRetryCount(),
+                    result
+            );
+
+            return result;
         }
 
-        payment.setRetryCount(payment.getRetryCount() + 1);
+        int retryCountBefore = payment.getRetryCount();
+
+        payment.setRetryCount(retryCountBefore + 1);
         payment.setAttemptedAt(LocalDateTime.now());
 
         paymentRepository.save(payment);
 
-        return "Retry scheduled for payment "
+        String result = "Retry scheduled for payment "
                 + payment.getId()
                 + ". Retry count: "
                 + payment.getRetryCount();
+
+        saveAttempt(
+                payment,
+                RecommendedAction.RETRY_PAYMENT,
+                retryCountBefore,
+                result
+        );
+
+        return result;
+    }
+
+    private String recordNonRetryAction(
+            Payment payment,
+            RecommendedAction action,
+            String result) {
+
+        saveAttempt(
+                payment,
+                action,
+                payment.getRetryCount(),
+                result
+        );
+
+        return result;
+    }
+
+    private void saveAttempt(
+            Payment payment,
+            RecommendedAction action,
+            int retryCountBefore,
+            String result) {
+
+        RecoveryAttempt attempt = new RecoveryAttempt();
+
+        attempt.setPayment(payment);
+        attempt.setAction(action);
+        attempt.setRetryCountBefore(retryCountBefore);
+        attempt.setAttemptedAt(LocalDateTime.now());
+        attempt.setResult(result);
+
+        recoveryAttemptRepository.save(attempt);
     }
 }
