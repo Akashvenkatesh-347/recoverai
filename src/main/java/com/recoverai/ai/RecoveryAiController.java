@@ -1,5 +1,6 @@
 package com.recoverai.ai;
 
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -14,7 +15,7 @@ public class RecoveryAiController {
 
     @PostMapping("/recovery")
     public RecoveryAiResponse analyzeRecovery(
-            @RequestBody RecoveryAiRequest request) {
+            @Valid @RequestBody RecoveryAiRequest request) {
 
         return recoveryAiService.analyze(request);
     }
