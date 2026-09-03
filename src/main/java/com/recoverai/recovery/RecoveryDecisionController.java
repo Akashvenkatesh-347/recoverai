@@ -11,13 +11,16 @@ public class RecoveryDecisionController {
 
     private final PaymentRepository paymentRepository;
     private final RecoveryPolicyService recoveryPolicyService;
+    private final RecoveryExecutionService recoveryExecutionService;
 
     public RecoveryDecisionController(
             PaymentRepository paymentRepository,
-            RecoveryPolicyService recoveryPolicyService) {
+            RecoveryPolicyService recoveryPolicyService,
+            RecoveryExecutionService recoveryExecutionService) {
 
         this.paymentRepository = paymentRepository;
         this.recoveryPolicyService = recoveryPolicyService;
+        this.recoveryExecutionService = recoveryExecutionService;
     }
 
     @PostMapping("/payments/{paymentId}/decision")
@@ -31,10 +34,6 @@ public class RecoveryDecisionController {
                         )
                 );
 
-        /*
-         * For now, the decision endpoint receives no AI recommendation.
-         * The deterministic policy remains the safety layer.
-         */
         RecommendedAction action =
                 recoveryPolicyService.determineAllowedAction(
                         payment,
@@ -54,6 +53,29 @@ public class RecoveryDecisionController {
                 );
 
         return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/payments/{paymentId}/execute")
+    public ResponseEntity<String> executeRecovery(
+            @PathVariable Long paymentId) {
+
+        Payment payment = paymentRepository.findById(paymentId)
+                .orElseThrow(() ->
+                        new IllegalArgumentException(
+                                "Payment not found: " + paymentId
+                        )
+                );
+
+        RecommendedAction action =
+                recoveryPolicyService.determineAllowedAction(
+                        payment,
+                        RecommendedAction.RETRY_PAYMENT
+                );
+
+        String result =
+                recoveryExecutionService.execute(payment, action);
+
+        return ResponseEntity.ok(result);
     }
 
     private RiskLevel determineRiskLevel(
