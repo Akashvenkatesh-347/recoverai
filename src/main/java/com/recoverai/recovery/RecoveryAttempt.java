@@ -27,6 +27,10 @@ public class RecoveryAttempt {
     @Column(nullable = false)
     private RecommendedAction action;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private RecoveryAttemptStatus status;
+
     @Column(nullable = false)
     private int retryCountBefore;
 

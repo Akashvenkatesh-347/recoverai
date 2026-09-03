@@ -30,7 +30,9 @@ public class RecoveryExecutionService {
         }
 
         if (action == null) {
-            throw new IllegalArgumentException("Recovery action cannot be null");
+            throw new IllegalArgumentException(
+                    "Recovery action cannot be null"
+            );
         }
 
         return switch (action) {
@@ -41,6 +43,7 @@ public class RecoveryExecutionService {
                     recordNonRetryAction(
                             payment,
                             action,
+                            RecoveryAttemptStatus.SUCCESS,
                             "User notification required for payment "
                                     + payment.getId()
                     );
@@ -49,6 +52,7 @@ public class RecoveryExecutionService {
                     recordNonRetryAction(
                             payment,
                             action,
+                            RecoveryAttemptStatus.SUCCESS,
                             "Payment " + payment.getId()
                                     + " has been escalated for manual review."
                     );
@@ -57,6 +61,7 @@ public class RecoveryExecutionService {
                     recordNonRetryAction(
                             payment,
                             action,
+                            RecoveryAttemptStatus.SKIPPED,
                             "No recovery action required for payment "
                                     + payment.getId()
                     );
@@ -73,6 +78,7 @@ public class RecoveryExecutionService {
             saveAttempt(
                     payment,
                     RecommendedAction.RETRY_PAYMENT,
+                    RecoveryAttemptStatus.SKIPPED,
                     payment.getRetryCount(),
                     result
             );
@@ -95,6 +101,7 @@ public class RecoveryExecutionService {
         saveAttempt(
                 payment,
                 RecommendedAction.RETRY_PAYMENT,
+                RecoveryAttemptStatus.SUCCESS,
                 retryCountBefore,
                 result
         );
@@ -105,11 +112,13 @@ public class RecoveryExecutionService {
     private String recordNonRetryAction(
             Payment payment,
             RecommendedAction action,
+            RecoveryAttemptStatus status,
             String result) {
 
         saveAttempt(
                 payment,
                 action,
+                status,
                 payment.getRetryCount(),
                 result
         );
@@ -120,6 +129,7 @@ public class RecoveryExecutionService {
     private void saveAttempt(
             Payment payment,
             RecommendedAction action,
+            RecoveryAttemptStatus status,
             int retryCountBefore,
             String result) {
 
@@ -127,6 +137,7 @@ public class RecoveryExecutionService {
 
         attempt.setPayment(payment);
         attempt.setAction(action);
+        attempt.setStatus(status);
         attempt.setRetryCountBefore(retryCountBefore);
         attempt.setAttemptedAt(LocalDateTime.now());
         attempt.setResult(result);
