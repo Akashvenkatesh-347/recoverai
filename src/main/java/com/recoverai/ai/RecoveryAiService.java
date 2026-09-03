@@ -1,22 +1,44 @@
 package com.recoverai.ai;
 
 import com.recoverai.exception.AiServiceException;
+import com.recoverai.payment.Payment;
+import com.recoverai.payment.repository.PaymentRepository;
 import com.recoverai.recovery.RecommendedAction;
-import com.recoverai.recovery.RiskLevel;
+import com.recoverai.recovery.RecoveryPolicyService;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Service;
 
 @Service
-public class
-RecoveryAiService {
+public class RecoveryAiService {
 
     private final ChatClient chatClient;
+    private final PaymentRepository paymentRepository;
+    private final RecoveryPolicyService recoveryPolicyService;
 
-    public RecoveryAiService(ChatClient.Builder chatClientBuilder) {
+    public RecoveryAiService(
+            ChatClient.Builder chatClientBuilder,
+            PaymentRepository paymentRepository,
+            RecoveryPolicyService recoveryPolicyService) {
+
         this.chatClient = chatClientBuilder.build();
+        this.paymentRepository = paymentRepository;
+        this.recoveryPolicyService = recoveryPolicyService;
     }
 
     public RecoveryAiResponse analyze(RecoveryAiRequest request) {
+
+        Payment payment = paymentRepository.findById(request.paymentId())
+                .orElseThrow(() ->
+                        new IllegalArgumentException(
+                                "Payment not found: " + request.paymentId()
+                        )
+                );
+
+        if (payment.getSubscription() == null) {
+            throw new IllegalArgumentException(
+                    "Payment does not have an associated subscription"
+            );
+        }
 
         String prompt = """
                 You are an AI payment recovery decision assistant.
@@ -43,24 +65,50 @@ RecoveryAiService {
 
                 Provide a short reason explaining the recommendation.
                 """.formatted(
-                request.paymentAmount(),
-                request.currency(),
-                request.paymentStatus(),
-                request.failureReason(),
-                request.retryCount(),
-                request.subscriptionStatus(),
-                request.planName()
+                payment.getAmount(),
+                payment.getCurrency(),
+                payment.getStatus(),
+                payment.getFailureReason(),
+                payment.getRetryCount(),
+                payment.getSubscription().getStatus(),
+                payment.getSubscription().getPlanName()
         );
 
         try {
-            return chatClient.prompt()
+
+            RecoveryAiResponse aiResponse = chatClient.prompt()
                     .user(prompt)
                     .call()
                     .entity(RecoveryAiResponse.class);
-        } catch (Exception e) {
+
+            if (aiResponse == null) {
+                throw new AiServiceException(
+                        "AI service returned an empty response",
+                        null
+                );
+            }
+
+            RecommendedAction finalAction =
+                    recoveryPolicyService.determineAllowedAction(
+                            payment,
+                            aiResponse.recommendedAction()
+                    );
+
+            return new RecoveryAiResponse(
+                    aiResponse.riskLevel(),
+                    aiResponse.reason(),
+                    finalAction,
+                    aiResponse.confidence()
+            );
+
+        } catch (AiServiceException exception) {
+            throw exception;
+
+        } catch (Exception exception) {
             throw new AiServiceException(
-                    "Failed to get a recovery recommendation from the AI service",
-                    e
+                    "Failed to analyze payment recovery: "
+                            + exception.getMessage(),
+                    exception
             );
         }
     }
