@@ -1,12 +1,14 @@
 package com.recoverai.ai;
 
+import com.recoverai.exception.AiServiceException;
 import com.recoverai.recovery.RecommendedAction;
 import com.recoverai.recovery.RiskLevel;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Service;
 
 @Service
-public class RecoveryAiService {
+public class
+RecoveryAiService {
 
     private final ChatClient chatClient;
 
@@ -50,9 +52,16 @@ public class RecoveryAiService {
                 request.planName()
         );
 
-        return chatClient.prompt()
-                .user(prompt)
-                .call()
-                .entity(RecoveryAiResponse.class);
+        try {
+            return chatClient.prompt()
+                    .user(prompt)
+                    .call()
+                    .entity(RecoveryAiResponse.class);
+        } catch (Exception e) {
+            throw new AiServiceException(
+                    "Failed to get a recovery recommendation from the AI service",
+                    e
+            );
+        }
     }
 }
