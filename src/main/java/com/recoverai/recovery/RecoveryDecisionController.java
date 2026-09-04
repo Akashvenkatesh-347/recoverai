@@ -1,7 +1,11 @@
 package com.recoverai.recovery;
 
+import com.recoverai.ai.RecoveryAiRequest;
+import com.recoverai.ai.RecoveryAiResponse;
+import com.recoverai.ai.RecoveryAiService;
 import com.recoverai.payment.Payment;
 import com.recoverai.payment.repository.PaymentRepository;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -15,17 +19,20 @@ public class RecoveryDecisionController {
     private final RecoveryPolicyService recoveryPolicyService;
     private final RecoveryExecutionService recoveryExecutionService;
     private final RecoveryAttemptRepository recoveryAttemptRepository;
+    private final RecoveryAiService recoveryAiService;
 
     public RecoveryDecisionController(
             PaymentRepository paymentRepository,
             RecoveryPolicyService recoveryPolicyService,
             RecoveryExecutionService recoveryExecutionService,
-            RecoveryAttemptRepository recoveryAttemptRepository) {
+            RecoveryAttemptRepository recoveryAttemptRepository,
+            RecoveryAiService recoveryAiService) {
 
         this.paymentRepository = paymentRepository;
         this.recoveryPolicyService = recoveryPolicyService;
         this.recoveryExecutionService = recoveryExecutionService;
         this.recoveryAttemptRepository = recoveryAttemptRepository;
+        this.recoveryAiService = recoveryAiService;
     }
 
     @PostMapping("/payments/{paymentId}/decision")
@@ -39,22 +46,26 @@ public class RecoveryDecisionController {
                         )
                 );
 
-        RecommendedAction action =
+        RecoveryAiRequest aiRequest =
+                new RecoveryAiRequest(paymentId);
+
+        RecoveryAiResponse aiResponse =
+                recoveryAiService.analyze(aiRequest);
+
+        RecommendedAction finalAction =
                 recoveryPolicyService.determineAllowedAction(
                         payment,
-                        RecommendedAction.RETRY_PAYMENT
+                        aiResponse.recommendedAction()
                 );
-
-        RiskLevel riskLevel = determineRiskLevel(payment, action);
-
-        String reason = buildReason(payment, action);
 
         RecoveryDecisionResponse response =
                 new RecoveryDecisionResponse(
                         payment.getId(),
-                        riskLevel,
-                        action,
-                        reason
+                        aiResponse.riskLevel(),
+                        aiResponse.recommendedAction(),
+                        finalAction,
+                        aiResponse.reason(),
+                        aiResponse.confidence()
                 );
 
         return ResponseEntity.ok(response);
@@ -62,7 +73,8 @@ public class RecoveryDecisionController {
 
     @PostMapping("/payments/{paymentId}/execute")
     public ResponseEntity<String> executeRecovery(
-            @PathVariable Long paymentId) {
+            @PathVariable Long paymentId,
+            @Valid @RequestBody RecoveryExecuteRequest request) {
 
         Payment payment = paymentRepository.findById(paymentId)
                 .orElseThrow(() ->
@@ -71,14 +83,17 @@ public class RecoveryDecisionController {
                         )
                 );
 
-        RecommendedAction action =
+        RecommendedAction finalAction =
                 recoveryPolicyService.determineAllowedAction(
                         payment,
-                        RecommendedAction.RETRY_PAYMENT
+                        request.action()
                 );
 
         String result =
-                recoveryExecutionService.execute(payment, action);
+                recoveryExecutionService.execute(
+                        payment,
+                        finalAction
+                );
 
         return ResponseEntity.ok(result);
     }
@@ -106,36 +121,5 @@ public class RecoveryDecisionController {
                         .toList();
 
         return ResponseEntity.ok(history);
-    }
-
-    private RiskLevel determineRiskLevel(
-            Payment payment,
-            RecommendedAction action) {
-
-        return switch (action) {
-            case RETRY_PAYMENT -> RiskLevel.LOW;
-            case USER_NOTIFICATION -> RiskLevel.MEDIUM;
-            case ESCALATE -> RiskLevel.HIGH;
-            case NO_ACTION -> RiskLevel.LOW;
-        };
-    }
-
-    private String buildReason(
-            Payment payment,
-            RecommendedAction action) {
-
-        return switch (action) {
-            case RETRY_PAYMENT ->
-                    "Payment failed for a retryable reason and is within the retry limit.";
-
-            case USER_NOTIFICATION ->
-                    "Payment cannot currently be retried automatically.";
-
-            case ESCALATE ->
-                    "Payment requires manual intervention.";
-
-            case NO_ACTION ->
-                    "No recovery action is currently required.";
-        };
     }
 }
