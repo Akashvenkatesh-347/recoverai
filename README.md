@@ -813,6 +813,10 @@ For a production system, recovery metrics could include:
 
 ---
 
+## Architecture
+
+![RecoverAI Architecture](docs/architecture.png)
+
 # 🚧 Current MVP Limitations
 
 RecoverAI is currently a backend MVP.
